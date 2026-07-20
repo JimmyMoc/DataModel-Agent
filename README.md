@@ -211,7 +211,7 @@ tudominio.com {
 }
 ```
 
-## 🎓 Tecnologías
+## Tecnologías
 
 | Componente            | Versión | Propósito            |
 | --------------------- | ------- | -------------------- |

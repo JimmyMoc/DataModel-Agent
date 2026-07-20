@@ -48,6 +48,8 @@ autovalidantes.
   PostgreSQL), pensado para correr en cualquier VPS gratuito sin necesitar 
   tarjeta de crédito ni servicios gestionados de pago
 
+![Arquitectura](Arquitectura.png)
+
 ## Requisitos del reto que debe cumplir
 - Ser un agente especializado que use un modelo de IA como motor principal 
   más herramientas adicionales para un problema específico

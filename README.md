@@ -16,19 +16,6 @@ migraciones destructivas y refactors. Las herramientas actuales (dbdiagram.io,
 MySQL Workbench, ERBuilder) son visuales y manuales, no conversacionales ni 
 autovalidantes.
 
-## Flujo funcional
-1. El usuario describe su dominio en lenguaje natural (ej. "sistema de citas 
-   médicas con doctores, pacientes, horarios y especialidades")
-2. El agente propone un esquema: entidades, atributos, tipos de datos, 
-   relaciones (1:N, N:M)
-3. Valida el esquema contra buenas prácticas (normalización, redundancias, 
-   índices necesarios) usando una base de conocimiento curada (RAG)
-4. Genera las migraciones ejecutables
-5. Ejecuta las migraciones contra una base de datos de prueba real para 
-   confirmar que corren sin errores antes de entregarlas
-6. El usuario puede iterar conversacionalmente ("un doctor puede tener varias 
-   especialidades") y el agente regenera solo la parte afectada
-
 ## Arquitectura técnica.
 
 ![Arquitectura](Arquitectura.png)

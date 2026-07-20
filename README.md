@@ -30,23 +30,6 @@ autovalidantes.
    especialidades") y el agente regenera solo la parte afectada
 
 ## Arquitectura técnica.
-- **UI**: Laravel (interfaz web donde el usuario describe su dominio y ve el 
-  esquema/migraciones generadas)
-- **Orquestador**: FastAPI (Python) en Docker, expone una API REST que Laravel 
-  consume, coordina todo el flujo del agente
-- **LLM**: Ollama corriendo un modelo abierto local (ej. Llama 3.2 o Mistral) 
-  como motor de razonamiento
-- **MCP tools** (Python):
-  - Una tool que introspecciona un esquema de base de datos existente (si el 
-    usuario ya tiene uno)
-  - Una tool que ejecuta una migración contra una base de datos de prueba y 
-    devuelve el resultado (éxito/error) para validación real
-- **Base de datos**: PostgreSQL con extensión pgvector — funciona como base de 
-  conocimiento para RAG (patrones de diseño y anti-patrones curados) y como 
-  base de datos de prueba donde se validan las migraciones generadas
-- **Despliegue**: docker-compose con tres servicios (Laravel, FastAPI, 
-  PostgreSQL), pensado para correr en cualquier VPS gratuito sin necesitar 
-  tarjeta de crédito ni servicios gestionados de pago
 
 ![Arquitectura](Arquitectura.png)
 

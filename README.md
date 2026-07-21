@@ -1,34 +1,26 @@
-# Data Model Agent
+# Data Model Agent: De lenguaje natural a esquemas ejecutables
 
-Agente conversacional que convierte lenguaje natural en esquemas de base de datos validados.
+## Contexto del proyecto
+Estoy construyendo un agente especializado para el reto "Agentes Especializados" 
+de un hackathon (Código Facilito x AWS Kiro). El agente reemplaza el modelado 
+manual de bases de datos (diagramas arrastrando cajas) por una conversación: 
+el usuario describe su dominio en lenguaje natural, el agente itera con él, 
+genera migraciones, y las valida ejecutándolas contra una base de datos real 
+antes de entregarlas.
 
-[![Stack](https://img.shields.io/badge/Stack-Laravel%20•%20FastAPI%20•%20Ollama%20•%20PostgreSQL-blue)]()
-[![License](https://img.shields.io/badge/License-MIT-green)]()
+## Problema que resuelve
+El modelado de datos es un cuello de botella real en cualquier proyecto de 
+software: normalmente lo hace un dev senior a mano, y los errores de 
+normalización o relaciones mal diseñadas se pagan caro después en forma de 
+migraciones destructivas y refactors. Las herramientas actuales (dbdiagram.io, 
+MySQL Workbench, ERBuilder) son visuales y manuales, no conversacionales ni 
+autovalidantes.
 
-## ¿Qué problema resuelve?
+## Arquitectura técnica.
 
-El modelado de datos es un cuello de botella en todo proyecto de software. Normalmente requiere un dev senior dibujando diagramas manualmente, y los errores de diseño se pagan caro después en migraciones destructivas.
+![Arquitectura](Arquitectura.png)
 
-**Data Model Agent** reemplaza ese proceso por una conversación: describes tu dominio en lenguaje natural, el agente propone un esquema normalizado, genera migraciones SQL, y las ejecuta contra una BD real para validar que funcionan antes de entregártelas.
-
-## Arquitectura
-
-```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
-│   Laravel   │────▶│   FastAPI        │────▶│   Ollama    │
-│  (Frontend) │◀────│  (Orchestrator)  │◀────│   (LLM)     │
-└─────────────┘     └───────┬──────────┘     └─────────────┘
-                            │
-                    ┌───────┼──────────┐
-                    ▼       ▼          ▼
-             ┌─────────┐ ┌─────┐ ┌────────────┐
-             │   RAG   │ │ MCP │ │  Test DB   │
-             │(pgvector)│ │Tools│ │(migrations)│
-             └─────────┘ └─────┘ └────────────┘
-                    │       │          │
-                    └───────┴──────────┘
-                         PostgreSQL
-```
+>>>>>>> 9b2a0fba378586d1c09811dc02c0f8131e647ec8
 
 | Componente    | Tecnología                       | Rol                         |
 | ------------- | -------------------------------- | --------------------------- |

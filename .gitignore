@@ -1,0 +1,24 @@
+# General
+.env
+*.pyc
+__pycache__/
+.DS_Store
+
+# Python / Orquestador
+orchestrator/.venv/
+orchestrator/*.egg-info/
+
+# Laravel / Frontend
+frontend/vendor/
+frontend/node_modules/
+frontend/.env
+frontend/storage/logs/*
+frontend/bootstrap/cache/*
+
+# Docker
+postgres_data/
+
+# IDE 
+.idea/
+.vscode/
+*.swp

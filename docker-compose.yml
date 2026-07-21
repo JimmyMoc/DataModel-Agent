@@ -1,0 +1,86 @@
+services:
+  # PostgreSQL con pgvector
+  postgres:
+    build:
+      context: ./docker/postgres
+      dockerfile: Dockerfile
+    container_name: dma-postgres
+    environment:
+      POSTGRES_USER: dma_user
+      POSTGRES_PASSWORD: dma_secret
+      POSTGRES_DB: dma_main
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dma_user -d dma_main"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Ollama (LLM local)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: dma-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Orquestador
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: dma-orchestrator
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dma_user:dma_secret@postgres:5432/dma_main
+      TEST_DATABASE_URL: postgresql+asyncpg://dma_user:dma_secret@postgres:5432/dma_test
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.2
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./orchestrator:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+
+  # Laravel Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dma-frontend
+    environment:
+      APP_NAME: "Data Model Agent"
+      APP_ENV: local
+      APP_KEY: base64:TO_BE_GENERATED
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8080
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: dma_main
+      DB_USERNAME: dma_user
+      DB_PASSWORD: dma_secret
+      ORCHESTRATOR_URL: http://orchestrator:8000
+    ports:
+      - "8080:80"
+    volumes:
+      - ./frontend:/var/www/html
+    depends_on:
+      - orchestrator
+
+volumes:
+  postgres_data:
+  ollama_data:

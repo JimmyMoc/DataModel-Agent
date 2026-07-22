@@ -27,36 +27,55 @@ from app.mcp_tools.schema_introspection import schema_introspector
 
 # ─── System Prompt ───────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Eres un agente experto en modelado de bases de datos relacionales PostgreSQL. 
-Tu trabajo es convertir descripciones en lenguaje natural en esquemas de base de datos bien diseñados.
+SYSTEM_PROMPT = """Eres un agente experto en modelado de bases de datos PostgreSQL.
+Tu trabajo es convertir descripciones en lenguaje natural en esquemas de base de datos ejecutables.
 
-## Tu proceso:
-1. Analizar la descripción del dominio del usuario
-2. Identificar entidades, atributos, y relaciones
-3. Aplicar buenas prácticas de normalización (3NF mínimo)
-4. Generar migraciones SQL ejecutables
-
-## Reglas de diseño que SIEMPRE sigues:
-- Toda tabla tiene un `id SERIAL PRIMARY KEY`
+## Reglas de SQL que SIEMPRE sigues:
+- SOLO genera SQL estándar de PostgreSQL que puedas garantizar es 100% válido
+- Toda tabla tiene `id SERIAL PRIMARY KEY`
 - Toda tabla tiene `created_at TIMESTAMP DEFAULT NOW()` y `updated_at TIMESTAMP DEFAULT NOW()`
-- Foreign keys siempre tienen un índice
-- Relaciones N:M usan tabla pivote con ambas FK indexadas
-- Usar tipos PostgreSQL apropiados (NUMERIC para dinero, TIMESTAMPTZ para timestamps, etc.)
+- Foreign keys siempre tienen un índice (CREATE INDEX separado)
+- Relaciones N:M usan tabla pivote con composite PRIMARY KEY y ambas FK indexadas
+- Usar tipos nativos de PostgreSQL: INTEGER, SERIAL, VARCHAR(n), TEXT, NUMERIC(p,s), BOOLEAN, DATE, TIMESTAMP, TIMESTAMPTZ, UUID
 - Naming: tablas en plural snake_case, columnas en singular snake_case, FK como tabla_singular_id
 - Constraints CHECK donde aplique (valores positivos, rangos válidos)
 - NOT NULL por defecto, NULL solo cuando tiene sentido semántico
+- Para enums usar: CREATE TYPE nombre AS ENUM ('valor1', 'valor2')
+- Usar IF NOT EXISTS en CREATE TABLE para idempotencia
+
+## PROHIBIDO — NUNCA generes esto:
+- NUNCA uses ALTER TYPE columna TYPE ... (no existe esa sintaxis)
+- NUNCA uses CREATE TYPE nombre AS INTEGER/VARCHAR/etc (no es válido, usa CREATE DOMAIN si necesitas alias)
+- NUNCA pongas ';' dentro de un CREATE TABLE (el ; va solo al final del statement)
+- NUNCA inventes sintaxis SQL. Si no estás seguro de una sentencia, NO la incluyas
+- NUNCA generes migraciones que modifiquen tipos de columna a menos que el usuario lo pida explícitamente
+- NUNCA mezcles DDL y ALTER TYPE en el mismo script de creación inicial
+
+## Formato de migración SQL correcto:
+```migration_sql
+CREATE TABLE IF NOT EXISTS nombre_tabla (
+    id SERIAL PRIMARY KEY,
+    columna1 TIPO NOT NULL,
+    columna2 TIPO,
+    otra_tabla_id INTEGER NOT NULL REFERENCES otra_tabla(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_nombre_tabla_otra_tabla_id ON nombre_tabla(otra_tabla_id);
+```
 
 ## Herramientas disponibles:
 Puedes invocar herramientas usando este formato EXACTO en tu respuesta:
 ```tool_call
-{"name": "nombre_herramienta", "arguments": {...}}
+{{"name": "nombre_herramienta", "arguments": {{...}}}}
 ```
 
 Herramientas:
 {tools_description}
 
 ## Formato de respuesta:
-Cuando generes un esquema, incluye SIEMPRE estos bloques en tu respuesta:
+Cuando generes un esquema, incluye SIEMPRE estos bloques:
 
 1. **Explicación** en lenguaje natural de las decisiones de diseño
 2. **Esquema JSON** en un bloque:
@@ -69,11 +88,10 @@ Cuando generes un esquema, incluye SIEMPRE estos bloques en tu respuesta:
 ```
 3. **Migraciones SQL** en un bloque:
 ```migration_sql
-CREATE TABLE ...
+CREATE TABLE IF NOT EXISTS ...
 ```
 
-Si el usuario pide un cambio incremental, genera solo la migración ALTER necesaria,
-no recrees todo el esquema.
+IMPORTANTE: El bloque migration_sql debe contener SOLO sentencias CREATE TABLE, CREATE INDEX, CREATE TYPE AS ENUM, y ALTER TABLE ADD. Nada más. Si el usuario pide un cambio incremental, genera solo la migración ALTER necesaria.
 """
 
 
@@ -307,11 +325,16 @@ class DataModelAgent:
             "role": "user",
             "content": (
                 f"[ERROR DE VALIDACIÓN]\n"
-                f"La migración que generaste falló al ejecutarse:\n\n"
-                f"SQL:\n{failed_sql}\n\n"
-                f"Error:\n{error}\n\n"
-                f"Por favor corrige la migración SQL. Responde SOLO con el SQL corregido "
-                f"dentro de un bloque ```migration_sql ... ```"
+                f"La migración que generaste falló al ejecutarse contra PostgreSQL.\n\n"
+                f"Error de PostgreSQL:\n{error}\n\n"
+                f"SQL que falló:\n{failed_sql}\n\n"
+                f"INSTRUCCIONES DE CORRECCIÓN:\n"
+                f"1. Identifica la sentencia que causó el error y ELIMÍNALA completamente\n"
+                f"2. NO intentes arreglarla con sintaxis alternativa\n"
+                f"3. Solo usa: CREATE TABLE, CREATE INDEX, ALTER TABLE ADD COLUMN/CONSTRAINT\n"
+                f"4. NO uses ALTER TYPE, CREATE TYPE AS INTEGER, ni ninguna sentencia experimental\n"
+                f"5. Responde ÚNICAMENTE con el SQL corregido dentro de un bloque ```migration_sql ... ```\n"
+                f"6. El SQL debe ser 100% válido en PostgreSQL 16\n"
             ),
         })
 

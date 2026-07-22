@@ -73,9 +73,9 @@ class RAGEngine:
                 content,
                 category,
                 metadata,
-                1 - (embedding <=> :embedding::vector) AS similarity
+                1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
             FROM knowledge_embeddings
-            WHERE 1 - (embedding <=> :embedding::vector) > :threshold
+            WHERE 1 - (embedding <=> CAST(:embedding AS vector)) > :threshold
         """
 
         params = {
@@ -170,7 +170,7 @@ class RAGEngine:
                     await session.execute(
                         text("""
                             INSERT INTO knowledge_embeddings (content, category, metadata, embedding)
-                            VALUES (:content, :category, :metadata::jsonb, :embedding::vector)
+                            VALUES (:content, :category, CAST(:metadata AS jsonb), CAST(:embedding AS vector))
                         """),
                         {
                             "content": doc["content"],

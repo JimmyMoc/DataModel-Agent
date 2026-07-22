@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: dma_secret
       POSTGRES_DB: dma_main
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d
@@ -28,11 +28,6 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   # FastAPI Orquestador
   orchestrator:
@@ -50,10 +45,8 @@ services:
     volumes:
       - ./orchestrator:/app
     depends_on:
-      postgres:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
+    - postgres
+    - ollama
 
   # Laravel Frontend
   frontend:
@@ -64,7 +57,7 @@ services:
     environment:
       APP_NAME: "Data Model Agent"
       APP_ENV: local
-      APP_KEY: base64:TO_BE_GENERATED
+      APP_KEY: base64:ymxYpWZu+W5Eolay6+F0yZjGnk6LJFCY0+0SlMbEH+M=
       APP_DEBUG: "true"
       APP_URL: http://localhost:8080
       DB_CONNECTION: pgsql

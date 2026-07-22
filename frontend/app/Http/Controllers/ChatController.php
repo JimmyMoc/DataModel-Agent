@@ -96,4 +96,25 @@ class ChatController extends Controller
             return response()->json([]);
         }
     }
+
+    /**
+     * Eliminar una conversación.
+     */
+    public function deleteConversation(string $conversationId)
+    {
+        try {
+            $response = Http::timeout(10)->delete(
+                "{$this->orchestratorUrl}/api/chat/conversations/{$conversationId}"
+            );
+
+            if ($response->successful()) {
+                return response()->json(['success' => true]);
+            }
+
+            return response()->json(['success' => false], $response->status());
+
+        } catch (\Exception $e) {
+            return response()->json(['success' => false], 503);
+        }
+    }
 }

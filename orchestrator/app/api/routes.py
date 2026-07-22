@@ -85,7 +85,7 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
     await db.execute(
         text(
             "INSERT INTO messages (conversation_id, role, content, metadata) "
-            "VALUES (:cid, 'assistant', :content, :metadata::jsonb)"
+            "VALUES (:cid, 'assistant', :content, CAST(:metadata AS jsonb))"
         ),
         {
             "cid": conversation_id,
@@ -100,7 +100,7 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
             text("""
                 INSERT INTO generated_schemas 
                     (conversation_id, schema_json, migration_sql, validation_status, validation_error)
-                VALUES (:cid, :schema::jsonb, :sql, :status, :error)
+                VALUES (:cid, CAST(:schema AS jsonb), :sql, :status, :error)
             """),
             {
                 "cid": conversation_id,
@@ -173,3 +173,23 @@ async def get_messages(conversation_id: str, db: AsyncSession = Depends(get_db))
         }
         for row in rows
     ]
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str, db: AsyncSession = Depends(get_db)):
+    """Eliminar una conversación y todos sus mensajes."""
+    # Check it exists
+    result = await db.execute(
+        text("SELECT id FROM conversations WHERE id = :cid"),
+        {"cid": conversation_id},
+    )
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+    # Delete (CASCADE handles messages and schemas)
+    await db.execute(
+        text("DELETE FROM conversations WHERE id = :cid"),
+        {"cid": conversation_id},
+    )
+    await db.commit()
+    return {"success": True, "deleted": conversation_id}

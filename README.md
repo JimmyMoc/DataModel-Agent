@@ -2,6 +2,8 @@
 
 ## Contexto del proyecto
 
+![Model](Model.png)
+
 Estoy construyendo un agente especializado para el reto **"Agentes Especializados"**
 del **Hackathon Código Facilito x AWS Kiro**. El agente reemplaza el modelado
 manual de bases de datos (diagramas arrastrando cajas) por una conversación:
@@ -45,10 +47,22 @@ Actualmente el frontend también está disponible como imagen pública en Docker
 docker pull mocjaim27/data-model-agent-frontend:latest
 ```
 
+El servicio **Data Model Agent Orchestrator** también está disponible como imagen pública en Docker Hub.
+
+## Descargar la imagen
+
+```bash
+docker pull mocjaim27/data-model-agent-orchestrator:latest
+```
+
 ## Ejecutar
 
 ```bash
 docker run -p 8080:80 mocjaim27/data-model-agent-frontend:latest
+```
+
+```bash
+docker run -p 8080:80 mocjaim27/data-model-agent-orchestrator:latest
 ```
 
 ## Docker Hub

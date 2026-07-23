@@ -20,7 +20,7 @@ class OllamaClient:
         self,
         base_url: str = settings.ollama_base_url,
         model: str = settings.ollama_model,
-        timeout: float = 120.0,
+        timeout: float = 300.0,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -77,7 +77,7 @@ class OllamaClient:
             "stream": False,
             "options": {
                 "temperature": temperature,
-                "num_predict": 4096,
+                "num_predict": 2048,
             },
         }
 
@@ -119,7 +119,7 @@ class OllamaClient:
             "stream": False,
             "options": {
                 "temperature": temperature,
-                "num_predict": 4096,
+                "num_predict": 2048,
             },
         }
 
@@ -152,7 +152,7 @@ class OllamaClient:
             "stream": True,
             "options": {
                 "temperature": temperature,
-                "num_predict": 4096,
+                "num_predict": 2048,
             },
         }
 

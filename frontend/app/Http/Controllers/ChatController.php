@@ -33,7 +33,7 @@ class ChatController extends Controller
         ]);
 
         try {
-            $response = Http::timeout(120)->post("{$this->orchestratorUrl}/api/chat/", [
+            $response = Http::timeout(300)->post("{$this->orchestratorUrl}/api/chat/", [
                 'message' => $request->input('message'),
                 'conversation_id' => $request->input('conversation_id'),
             ]);

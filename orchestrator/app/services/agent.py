@@ -27,89 +27,37 @@ from app.mcp_tools.schema_introspection import schema_introspector
 
 # ─── System Prompt ───────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Eres un agente experto en modelado de bases de datos PostgreSQL.
-Tu trabajo es convertir descripciones en lenguaje natural en esquemas de base de datos ejecutables.
+SYSTEM_PROMPT = """Eres un experto en modelado de bases de datos PostgreSQL.
+Conviertes descripciones en lenguaje natural a esquemas de base de datos.
 
-## Reglas de SQL que SIEMPRE sigues:
-- SOLO genera SQL estándar de PostgreSQL que puedas garantizar es 100% válido
-- Toda tabla tiene `id SERIAL PRIMARY KEY`
-- Toda tabla tiene `created_at TIMESTAMP DEFAULT NOW()` y `updated_at TIMESTAMP DEFAULT NOW()`
-- Foreign keys siempre tienen un índice (CREATE INDEX separado)
-- Relaciones N:M usan tabla pivote con composite PRIMARY KEY y ambas FK indexadas
-- Usar tipos nativos de PostgreSQL: INTEGER, SERIAL, VARCHAR(n), TEXT, NUMERIC(p,s), BOOLEAN, DATE, TIMESTAMP, TIMESTAMPTZ, UUID
-- Naming: tablas en plural snake_case, columnas en singular snake_case, FK como tabla_singular_id
-- Constraints CHECK donde aplique (valores positivos, rangos válidos)
-- NOT NULL por defecto, NULL solo cuando tiene sentido semántico
-- Para enums usar: CREATE TYPE nombre AS ENUM ('valor1', 'valor2')
-- Usar IF NOT EXISTS en CREATE TABLE para idempotencia
+RESPONDE SIEMPRE con un bloque schema_json como este:
 
-## PROHIBIDO — NUNCA generes esto:
-- NUNCA uses ALTER TYPE columna TYPE ... (no existe esa sintaxis)
-- NUNCA uses CREATE TYPE nombre AS INTEGER/VARCHAR/etc (no es válido, usa CREATE DOMAIN si necesitas alias)
-- NUNCA pongas ';' dentro de un CREATE TABLE (el ; va solo al final del statement)
-- NUNCA inventes sintaxis SQL. Si no estás seguro de una sentencia, NO la incluyas
-- NUNCA generes migraciones que modifiquen tipos de columna a menos que el usuario lo pida explícitamente
-- NUNCA mezcles DDL y ALTER TYPE en el mismo script de creación inicial
-
-## Formato de migración SQL correcto:
-```migration_sql
-CREATE TABLE IF NOT EXISTS nombre_tabla (
-    id SERIAL PRIMARY KEY,
-    columna1 TIPO NOT NULL,
-    columna2 TIPO,
-    otra_tabla_id INTEGER NOT NULL REFERENCES otra_tabla(id),
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_nombre_tabla_otra_tabla_id ON nombre_tabla(otra_tabla_id);
-```
-
-## Herramientas disponibles:
-Puedes invocar herramientas usando este formato EXACTO en tu respuesta:
-```tool_call
-{{"name": "nombre_herramienta", "arguments": {{...}}}}
-```
-
-Herramientas:
-{tools_description}
-
-## Formato de respuesta:
-Cuando generes un esquema, incluye SIEMPRE estos bloques:
-
-1. **Explicación** en lenguaje natural de las decisiones de diseño
-2. **Esquema JSON** en un bloque:
 ```schema_json
 {{
-  "entities": [...],
-  "relations": [...],
-  "notes": [...]
+  "entities": [
+    {{
+      "name": "tabla_plural",
+      "columns": ["id", "nombre", "email", "otra_tabla_id"],
+      "foreign_keys": [{{"column": "otra_tabla_id", "table": "otra_tabla"}}]
+    }}
+  ],
+  "notes": ["explicación breve"]
 }}
 ```
-3. **Migraciones SQL** en un bloque:
-```migration_sql
-CREATE TABLE IF NOT EXISTS ...
-```
 
-IMPORTANTE: El bloque migration_sql debe contener SOLO sentencias CREATE TABLE, CREATE INDEX, CREATE TYPE AS ENUM, y ALTER TABLE ADD. Nada más. Si el usuario pide un cambio incremental, genera solo la migración ALTER necesaria.
+REGLAS para el schema_json:
+- Tablas en plural snake_case (users, orders, order_items)
+- Incluir TODAS las columnas necesarias incluyendo FKs (campo_id)
+- Relaciones N:M con tabla pivote
+- NO generes SQL. Solo genera el JSON schema.
+
+{tools_description}
 """
 
 
 def build_tools_description() -> str:
-    """Construir descripción de herramientas para el system prompt."""
-    parts = []
-    for tool in TOOL_DEFINITIONS:
-        params_desc = ""
-        props = tool["parameters"].get("properties", {})
-        if props:
-            params_desc = ", ".join(
-                f'{k}: {v.get("description", "")}'
-                for k, v in props.items()
-            )
-        parts.append(
-            f"- **{tool['name']}**({params_desc}): {tool['description']}"
-        )
-    return "\n".join(parts)
+    """Construir descripción mínima (no necesitamos que el LLM invoque tools)."""
+    return ""
 
 
 # ─── Agent Class ─────────────────────────────────────────────────────────────
@@ -160,11 +108,25 @@ class DataModelAgent:
         # 4. Loop de generación con tool calling
         response_text = await self._agent_loop(messages, tools_used)
 
-        # 5. Extraer esquema y migración de la respuesta
+        # 5. Extraer esquema JSON de la respuesta del LLM
         schema_json = self._extract_schema_json(response_text)
-        migration_sql = self._extract_migration_sql(response_text)
 
-        # 6. Validar migración si se generó
+        # 6. Generar SQL determinísticamente desde el schema JSON
+        #    (NO confiamos en el SQL del LLM — lo generamos con código)
+        migration_sql = None
+        if schema_json:
+            try:
+                from app.services.schema_to_sql import schema_to_sql
+                migration_sql = schema_to_sql(schema_json)
+            except Exception as e:
+                print(f"⚠️ Error en schema_to_sql: {e}")
+                # Fallback: intentar usar el SQL del LLM
+                migration_sql = self._extract_migration_sql(response_text)
+        else:
+            # Sin schema JSON, intentar extraer SQL directamente
+            migration_sql = self._extract_migration_sql(response_text)
+
+        # 7. Validar migración ejecutándola contra la BD de prueba
         validation_status = "pending"
         validation_error = None
 
@@ -176,7 +138,7 @@ class DataModelAgent:
             validation_error = validation_result.get("error_detail")
             tools_used.append("execute_migration")
 
-            # Si falló, intentar corregir con el LLM
+            # Si falló, intentar corregir con el LLM (solo 1 intento)
             if not validation_result["success"]:
                 corrected = await self._try_fix_migration(
                     messages, migration_sql, validation_error, tools_used
@@ -186,7 +148,7 @@ class DataModelAgent:
                     validation_status = corrected["status"]
                     validation_error = corrected.get("error")
 
-        # 7. Limpiar la respuesta para el usuario (remover bloques técnicos internos)
+        # 8. Limpiar la respuesta para el usuario (remover bloques técnicos internos)
         clean_message = self._clean_response(response_text)
 
         return {
@@ -201,7 +163,7 @@ class DataModelAgent:
     async def _get_rag_context(self, user_message: str) -> str:
         """Obtener contexto relevante de la base de conocimiento."""
         try:
-            return await rag_engine.get_relevant_context(user_message, limit=5)
+            return await rag_engine.get_relevant_context(user_message, limit=3)
         except Exception as e:
             print(f"⚠️ Error en RAG: {e}")
             return ""
@@ -233,7 +195,7 @@ class DataModelAgent:
         messages = [{"role": "system", "content": system}]
 
         # Agregar historial de conversación
-        for msg in conversation_history[-10:]:  # Últimos 10 mensajes
+        for msg in conversation_history[-4:]:  # Últimos 4 mensajes
             messages.append({
                 "role": msg["role"],
                 "content": msg["content"],
@@ -262,43 +224,13 @@ class DataModelAgent:
         self, messages: list[dict], tools_used: list[str]
     ) -> str:
         """
-        Loop del agente: generar respuesta, ejecutar tools si las invoca, repetir.
+        Generar respuesta del LLM. Ya no necesitamos tool calling loop
+        porque el SQL se genera determinísticamente desde el JSON schema.
         """
-        for iteration in range(self.MAX_TOOL_ITERATIONS):
-            # Generar respuesta del LLM
-            response_text = await ollama_client.chat(
-                messages=messages,
-                temperature=0.2,
-            )
-
-            # Buscar tool calls en la respuesta
-            tool_calls = self._extract_tool_calls(response_text)
-
-            if not tool_calls:
-                # No hay tool calls, la respuesta es final
-                return response_text
-
-            # Ejecutar cada tool call
-            for tool_call in tool_calls:
-                tool_name = tool_call.get("name", "")
-                tool_args = tool_call.get("arguments", {})
-
-                print(f"🔧 Tool call [{iteration+1}]: {tool_name}({tool_args})")
-                tools_used.append(tool_name)
-
-                result = await dispatch_tool(tool_name, tool_args)
-
-                # Agregar resultado al contexto
-                messages.append({
-                    "role": "assistant",
-                    "content": response_text,
-                })
-                messages.append({
-                    "role": "user",
-                    "content": f"[RESULTADO DE {tool_name}]\n{json.dumps(result, indent=2, default=str)}",
-                })
-
-        # Si llegamos aquí, agotamos las iteraciones
+        response_text = await ollama_client.chat(
+            messages=messages,
+            temperature=0.3,
+        )
         return response_text
 
     async def _validate_and_execute_migration(self, sql: str) -> dict:
@@ -380,22 +312,32 @@ class DataModelAgent:
 
     def _extract_schema_json(self, text: str) -> Optional[dict]:
         """Extraer el bloque de esquema JSON de la respuesta."""
+        # 1. Buscar bloque ```schema_json ... ```
         pattern = r"```schema_json\s*\n?(.*?)\n?```"
         match = re.search(pattern, text, re.DOTALL)
-
         if match:
             try:
                 return json.loads(match.group(1).strip())
             except json.JSONDecodeError:
                 pass
 
-        # Fallback: buscar JSON con structure de esquema
-        pattern = r'\{[^{}]*"entities"\s*:\s*\[.*?\]\s*[,}]'
-        match = re.search(pattern, text, re.DOTALL)
-        if match:
-            try:
-                # Intentar parsear un bloque JSON más amplio
-                start = text.find("{", match.start())
+        # 2. Buscar bloque ```json ... ``` que contenga "entities"
+        pattern = r"```json\s*\n?(.*?)\n?```"
+        matches = re.findall(pattern, text, re.DOTALL)
+        for m in matches:
+            if '"entities"' in m:
+                try:
+                    return json.loads(m.strip())
+                except json.JSONDecodeError:
+                    pass
+
+        # 3. Fallback: buscar JSON con estructura de esquema en texto libre
+        # Buscar el primer { que precede a "entities"
+        entities_pos = text.find('"entities"')
+        if entities_pos != -1:
+            # Buscar el { que abre este JSON
+            start = text.rfind("{", 0, entities_pos)
+            if start != -1:
                 depth = 0
                 end = start
                 for i, c in enumerate(text[start:], start):
@@ -406,9 +348,10 @@ class DataModelAgent:
                         if depth == 0:
                             end = i + 1
                             break
-                return json.loads(text[start:end])
-            except (json.JSONDecodeError, ValueError):
-                pass
+                try:
+                    return json.loads(text[start:end])
+                except (json.JSONDecodeError, ValueError):
+                    pass
 
         return None
 
